@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Face Recognition</title>
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="{{ url_for('static', filename='styles.css') }}"
+    />
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background-color: #f8f9fa;
+        text-align: center;
+        padding: 50px;
+      }
+      h1 {
+        color: #343a40;
+        margin-bottom: 30px;
+      }
+      .video-container {
+        display: inline-block;
+        border: 5px solid #343a40;
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      img {
+        width: 640px;
+        height: 480px;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Face Recognition</h1>
+    <div class="video-container">
+      <img src="{{ url_for('video_feed') }}" alt="Video Feed" />
+    </div>
+  </body>
+</html>
