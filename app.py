@@ -1,8 +1,71 @@
-from flask import Flask, render_template, Response
+from flask import Flask, render_template, Response, request, redirect
 import cv2
+import os
+import sqlite3
 from simple_facerec import SimpleFacerec
+from werkzeug.utils import secure_filename
+
+currentlocation = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = os.path.join(currentlocation, 'images')
+app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif'}
+app.secret_key = 'your_secret_key'
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+
+@app.route("/")
+def homepage():
+    return render_template("homepage.html")
+
+@app.route("/", methods=["POST"])
+def checklogin():
+    try:
+        UN = request.form['username']
+        PW = request.form['password']
+    except KeyError as e:
+        return f"KeyError: {str(e)} - form data: {request.form}", 400
+
+    sqlconnection = sqlite3.Connection(os.path.join(currentlocation, "Login.db"))
+    cursor = sqlconnection.cursor()
+    query = "SELECT username, password FROM Users WHERE username = ? AND password = ?"
+    cursor.execute(query, (UN, PW))
+    rows = cursor.fetchall()
+    if len(rows) == 1:
+        return render_template("LoggedIn.html")
+    else:
+        return redirect("/register")
+
+@app.route("/register", methods=["GET", "POST"])
+def registerpage():
+    if request.method == "POST":
+        dUN = request.form['DUsername']
+        dPW = request.form['Dpassword']
+        Uemail = request.form['EmailUser']
+
+        # Check if the post request has the file part
+        if 'user_image' not in request.files:
+            return "No file part"
+        file = request.files['user_image']
+        # If the user does not select a file, the browser submits an empty file without a filename
+        if file.filename == '':
+            return "No selected file"
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
+
+            # Save the user information in the database
+            sqlconnection = sqlite3.Connection(os.path.join(currentlocation, "Login.db"))
+            cursor = sqlconnection.cursor()
+            query = "INSERT INTO Users (username, password, email) VALUES (?, ?, ?)"
+            cursor.execute(query, (dUN, dPW, Uemail))
+            sqlconnection.commit()
+            
+            return redirect("/")
+    return render_template("register.html")
 
 # Encode faces from a folder
 sfr = SimpleFacerec()
@@ -11,7 +74,6 @@ sfr.load_encoding_images("images/")
 # Load Camera
 camera_index = 0
 cap = cv2.VideoCapture(camera_index)
-
 
 def gen_frames():
     while True:
@@ -30,7 +92,7 @@ def gen_frames():
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
-@app.route('/')
+@app.route('/index')
 def index():
     return render_template('index.html')
 
