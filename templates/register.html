@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Register</title>
+  </head>
+  <body>
+    <h1>Register</h1>
+    <form method="POST" enctype="multipart/form-data">
+      <label for="DUsername">Username:</label>
+      <input type="text" id="DUsername" name="DUsername" required />
+      <br />
+      <label for="Dpassword">Password:</label>
+      <input type="password" id="Dpassword" name="Dpassword" required />
+      <br />
+      <label for="EmailUser">Email:</label>
+      <input type="email" id="EmailUser" name="EmailUser" required />
+      <br />
+      <label for="user_image">Upload Image:</label>
+      <input
+        type="file"
+        id="user_image"
+        name="user_image"
+        accept="images/*"
+        required
+      />
+      <br />
+      <button type="submit">Register</button>
+    </form>
+  </body>
+</html>
