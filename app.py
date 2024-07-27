@@ -1,7 +1,10 @@
-from flask import Flask, render_template, Response, request, redirect
-import cv2
-import os
+from flask import Flask, render_template, redirect, url_for, session, request, flash, Response
+from authlib.integrations.flask_client import OAuth
 import sqlite3
+import os
+import base64
+import secrets
+import cv2
 from simple_facerec import SimpleFacerec
 from werkzeug.utils import secure_filename
 
@@ -10,7 +13,25 @@ currentlocation = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = os.path.join(currentlocation, 'images')
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif'}
-app.secret_key = 'your_secret_key'
+app.secret_key = os.urandom(24)
+
+# OAuth configuration
+app.config['GOOGLE_CLIENT_ID'] = '59540794108-p72it3u6i84uujld0gt1beam600vevp4.apps.googleusercontent.com'
+app.config['GOOGLE_CLIENT_SECRET'] = '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'
+app.config['GOOGLE_DISCOVERY_URL'] = (
+    "https://accounts.google.com/.well-known/openid-configuration"
+)
+
+oauth = OAuth(app)
+google = oauth.register(
+    name='google',
+    client_id=app.config['GOOGLE_CLIENT_ID'],
+    client_secret=app.config['GOOGLE_CLIENT_SECRET'],
+    server_metadata_url=app.config['GOOGLE_DISCOVERY_URL'],
+    client_kwargs={
+        'scope': 'openid email profile'
+    }
+)
 
 def allowed_file(filename):
     return '.' in filename and \
@@ -18,7 +39,40 @@ def allowed_file(filename):
 
 @app.route("/")
 def homepage():
+    if 'profile' in session:
+        return redirect(url_for('loggedin'))
     return render_template("homepage.html")
+
+@app.route("/login", methods=[ "POST"])
+def login():
+    if request.form.get('login_method') == 'manual':
+        return checklogin()
+    else:
+        redirect_uri = url_for("authorize", _external=True)
+        nonce = secrets.token_urlsafe(16)  # Generate a nonce
+        session['nonce'] = nonce
+        return google.authorize_redirect(redirect_uri, nonce=nonce)
+
+@app.route("/authorize")
+def authorize():
+      try:
+        token = google.authorize_access_token()
+        nonce = session.pop('nonce', None)  # Retrieve and remove nonce from session
+        if not nonce:
+            flash("Nonce not found in session. Please try logging in again.")
+            return redirect(url_for("homepage"))
+
+        user_info = google.parse_id_token(token, nonce=nonce)
+        session['profile'] = user_info
+        return redirect(url_for("loggedin"))
+      except Exception as e:
+        flash(f"Authorization failed: {str(e)}")
+        return redirect(url_for("homepage"))
+      
+@app.route("/logout")
+def logout():
+    session.pop('profile', None)
+    return redirect("/")
 
 @app.route("/", methods=["POST"])
 def checklogin():
@@ -34,9 +88,11 @@ def checklogin():
     cursor.execute(query, (UN, PW))
     rows = cursor.fetchall()
     if len(rows) == 1:
-        return render_template("LoggedIn.html")
+        session['profile'] = {'username': UN}  # Mock profile info
+        return redirect(url_for("loggedin"))
     else:
-        return redirect("/register")
+        flash("Invalid username or password")
+        return redirect(url_for("homepage"))
 
 @app.route("/register", methods=["GET", "POST"])
 def registerpage():
@@ -44,22 +100,27 @@ def registerpage():
         dUN = request.form['DUsername']
         dPW = request.form['Dpassword']
         Uemail = request.form['EmailUser']
+        user_image_data = request.form['user_image']
 
-        # Check if the post request has the file part
-        if 'user_image' not in request.files:
-            return "No file part"
-        file = request.files['user_image']
-        # If the user does not select a file, the browser submits an empty file without a filename
-        if file.filename == '':
-            return "No selected file"
-        if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(filepath)
-
-            # Save the user information in the database
-            sqlconnection = sqlite3.Connection(os.path.join(currentlocation, "Login.db"))
+        with sqlite3.connect(os.path.join(currentlocation, "Login.db")) as sqlconnection:
             cursor = sqlconnection.cursor()
+            cursor.execute("SELECT username FROM Users WHERE username = ?", (dUN,))
+            existing_user = cursor.fetchone()
+
+            if existing_user:
+                flash("Username already exists. Please choose a different one.")
+                return redirect("/register")
+
+            if not user_image_data:
+                flash("No image captured")
+                return redirect("/register")
+
+            image_data = base64.b64decode(user_image_data.split(',')[1])
+            filename = secure_filename(dUN + ".png")
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            with open(filepath, 'wb') as f:
+                f.write(image_data)
+
             query = "INSERT INTO Users (username, password, email) VALUES (?, ?, ?)"
             cursor.execute(query, (dUN, dPW, Uemail))
             sqlconnection.commit()
@@ -67,14 +128,15 @@ def registerpage():
             return redirect("/")
     return render_template("register.html")
 
-# Encode faces from a folder
-sfr = SimpleFacerec()
-sfr.load_encoding_images("images/")
-
 # Load Camera
 camera_index = 0
 cap = cv2.VideoCapture(camera_index)
 
+sfr = SimpleFacerec()
+sfr.load_encoding_images("images/")
+if not cap.isOpened():
+    print("Error: Could not open video source.")
+    
 def gen_frames():
     while True:
         ret, frame = cap.read()
@@ -88,6 +150,9 @@ def gen_frames():
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 200), 2)
             
             ret, buffer = cv2.imencode('.jpg', frame)
+            if not ret:
+                print("Error: Could not encode frame.")
+                continue
             frame = buffer.tobytes()
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
@@ -99,6 +164,12 @@ def index():
 @app.route('/video_feed')
 def video_feed():
     return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route('/loggedin')
+def loggedin():
+    if 'profile' in session:
+        return render_template('LoggedIn.html', user=session['profile'])
+    return redirect(url_for('homepage'))
 
 if __name__ == '__main__':
     app.run(debug=True)

@@ -6,7 +6,9 @@
     <title>Logged In</title>
   </head>
   <body>
-    <h1>Welcome!</h1>
+    <h1>Welcome, {{ user['username'] }}!</h1>
+    <p>You are successfully logged in.</p>
     <a href="/index">face recognition</a>
+    <a href="/logout">Logout</a>
   </body>
 </html>
