@@ -31,6 +31,11 @@
         height: 480px;
         display: block;
       }
+      #acne-result {
+        margin-top: 20px;
+        font-size: 1.2em;
+        color: #343a40;
+      }
     </style>
   </head>
   <body>
@@ -38,5 +43,29 @@
     <div class="video-container">
       <img src="{{ url_for('video_feed') }}" alt="Video Feed" />
     </div>
+    <div id="acne-result">Waiting for acne detection result...</div>
+
+    <script>
+      function updateAcneResult() {
+        fetch("/classify_face_acne")
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error("Network response was not ok");
+            }
+            return response.json();
+          })
+          .then((data) => {
+            document.getElementById("acne-result").textContent =
+              "Acne: " + data.result;
+          })
+          .catch((error) => {
+            console.error("Error fetching acne result:", error);
+            document.getElementById("acne-result").textContent =
+              "Error fetching result";
+          });
+      }
+
+      setInterval(updateAcneResult, 5000);
+    </script>
   </body>
 </html>
